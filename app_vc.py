@@ -288,7 +288,11 @@ def voice_conversion(source, target, diffusion_steps, length_adjust, inference_c
         chunk_cond = cond[:, processed_frames:processed_frames + max_source_window]
         is_last_chunk = processed_frames + max_source_window >= cond.size(1)
         cat_condition = torch.cat([prompt_condition, chunk_cond], dim=1)
-        with torch.autocast(device_type=device.type, dtype=torch.float16 if fp16 else torch.float32):
+        if device.type == "mps":
+            context_manager = torch.no_grad()
+        else:
+            context_manager = torch.autocast(device_type=device.type, dtype=torch.float16 if fp16 else torch.float32)
+        with context_manager:
             # Voice Conversion
             vc_target = inference_module.cfm.inference(cat_condition,
                                                        torch.LongTensor([cat_condition.size(1)]).to(mel2.device),
@@ -389,5 +393,11 @@ if __name__ == "__main__":
     parser.add_argument("--gpu", type=int, help="Which GPU id to use", default=0)
     args = parser.parse_args()
     cuda_target = f"cuda:{args.gpu}" if args.gpu else "cuda" 
-    device = torch.device(cuda_target if torch.cuda.is_available() else "cpu")
+    device = torch.device(
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps"
+        if torch.backends.mps.is_available() and torch.backends.mps.is_built()
+        else "cpu"
+    )
     main(args)
